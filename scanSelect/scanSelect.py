@@ -31,6 +31,8 @@ def getScanMap(scans):
 def main():
     parser = argparse.ArgumentParser(description='Select scans and precursors in "scanNum" column from mzML file.')
 
+    parser.add_argument('--scanCol', default='scanNum',
+                        help='Column in tsv_file to get ms2 scan numbers from. Default is "scanNum".')
     parser.add_argument('-s', '--sufix', default='_short',
                         help='Sufix to add to shortened files. Default is "_short".')
     parser.add_argument('--inplace', action='store_true', default=False,
@@ -48,7 +50,7 @@ def main():
 
         # get a list of scans in current mzML file
         file_base = os.path.splitext(fname)[0]
-        scans = dat[dat['precursorFile'].apply(lambda x: bool(re.match('{}\.\w+$'.format(file_base), x)))]['scanNum'].to_list()
+        scans = dat[dat['precursorFile'].apply(lambda x: bool(re.match('{}\.\w+$'.format(file_base), x)))][args.scanNum].to_list()
         if len(scans) == 0:
             sys.stderr.write('\n\tWARN: No scans in tsv for file {}\n'.format(fname))
             continue
