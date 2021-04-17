@@ -28,6 +28,64 @@ def getScanMap(scans):
     return scan_index, precursor_map
 
 
+def process_file(fname, scans, inplace=False, sufix='_short', verbose=False):
+    '''
+    
+    Parameters
+    ----------
+    fname: str
+        Path to mzML file.
+    scans: list
+        List of scans to select from mzML file.
+    inplace: bool
+        Should input file be overwritten?
+    sufix: str
+        Sufix to add to end of output file.
+    verbose: bool
+        Print verbose output?
+    '''
+
+    if len(scans) == 0:
+        sys.stderr.write('\n\tWARN: No scans in tsv for file {}\n'.format(fname))
+        return
+    
+    # load mzML file and get spectra and scan maps
+    exp = pyopenms.MSExperiment()
+    pyopenms.MzMLFile().load(fname, exp)
+    if not exp.isSorted():
+        exp.sortSpectra(True)
+    spectra = exp.getSpectra()
+    scan_index, precursor_map = getScanMap(spectra)
+
+    # construct list of scans to select
+    scans_index = list() # list of index of scans to select
+    for scan in scans:
+        # add precursor
+        scans_index.append(scan_index[precursor_map[int(scan)]])
+
+        # add ms2s
+        scans_index.append(scan_index[int(scan)])
+
+    # subset scan list
+    spectra_subset = [spectra[i] for i in scans_index]
+    newExp = pyopenms.MSExperiment()
+    newExp.setSpectra(spectra_subset)
+    newExp.sortSpectra(True)
+
+    # write subset mzML file
+    ofname = str()
+    if inplace:
+        ofname = fname
+    else:
+        ofname = '{}{}.mzML'.format(os.path.splitext(fname)[0], sufix)
+    if verbose:
+        sys.stdout.write('\tWriting {}...\n'.format(ofname))
+    pyopenms.MzMLFile().store(ofname, newExp)
+
+    if verbose:
+        sys.stdout.write('\tDone!\n')
+
+
 def main():
     parser = argparse.ArgumentParser(description='Select scans and precursors in "scanNum" column from mzML file.')
 
@@ -37,58 +95,27 @@ def main():
                         help='Sufix to add to shortened files. Default is "_short".')
     parser.add_argument('--inplace', action='store_true', default=False,
                         help='Overwrite mzML files.')
+    parser.add_argument('-v', '--verbose', action='store_true', default=False,
+                        help='Print verbose output.')
     parser.add_argument('tsv_file', help='Path to tsv file with "scanNum" column.')
     parser.add_argument('mzML_files', nargs='+', help='mzML file(s) to extract scans from.')
 
     args = parser.parse_args()
+    show_bar = not (args.verbose and args.nThread == 1)
+    _nThread = min(args.nThread, len(args.mzML_files))
 
     # read dat
     dat = pd.read_csv(args.tsv_file, sep='\t')
-
+    scansDict = dict()
     for fname in args.mzML_files:
-        sys.stdout.write('Working on {}...\n'.format(fname))
+        # set dict entry to the list of scans for the current fname
+        scansDict[fname] = dat[dat['precursorFile'].apply(lambda x: bool(re.match('{}\.\w+$'.format(os.path.splitext(fname)[0]), x)))][args.scanCol].to_list()
 
+    for fname, scans in scansDict.items():
         # get a list of scans in current mzML file
-        file_base = os.path.splitext(fname)[0]
-        scans = dat[dat['precursorFile'].apply(lambda x: bool(re.match('{}\.\w+$'.format(file_base), x)))][args.scanCol].to_list()
-        if len(scans) == 0:
-            sys.stderr.write('\n\tWARN: No scans in tsv for file {}\n'.format(fname))
-            continue
-        
-        # load mzML file and get spectra and scan maps
-        exp = pyopenms.MSExperiment()
-        pyopenms.MzMLFile().load(fname, exp)
-        if not exp.isSorted():
-            exp.sortSpectra(True)
-        spectra = exp.getSpectra()
-        scan_index, precursor_map = getScanMap(spectra)
-
-        # construct list of scans to select
-        scans_index = list() # list of index of scans to select
-        for scan in scans:
-            # add precursor
-            scans_index.append(scan_index[precursor_map[int(scan)]])
-
-            # add ms2s
-            scans_index.append(scan_index[int(scan)])
-
-        # subset scan list
-        spectra_subset = [spectra[i] for i in scans_index]
-        newExp = pyopenms.MSExperiment()
-        newExp.setSpectra(spectra_subset)
-        newExp.sortSpectra(True)
-
-        # write subset mzML file
-        ofname = str()
-        if args.inplace:
-            ofname = fname
-        else:
-            ofname = '{}{}.mzML'.format(file_base, args.sufix)
-        sys.stdout.write('\tWriting {}...\n'.format(ofname))
-        pyopenms.MzMLFile().store(ofname, newExp)
-
-        sys.stdout.write('\tDone!\n')
-
+        if args.verbose:
+            sys.stdout.write('Working on {}...\n'.format(fname))
+        process_file(fname, scans, inplace=args.inplace, sufix=args.sufix, verbose=args.verbose)
 
 if __name__ == '__main__':
     main()
