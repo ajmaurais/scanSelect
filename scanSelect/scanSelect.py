@@ -50,7 +50,7 @@ def main():
 
         # get a list of scans in current mzML file
         file_base = os.path.splitext(fname)[0]
-        scans = dat[dat['precursorFile'].apply(lambda x: bool(re.match('{}\.\w+$'.format(file_base), x)))][args.scanNum].to_list()
+        scans = dat[dat['precursorFile'].apply(lambda x: bool(re.match('{}\.\w+$'.format(file_base), x)))][args.scanCol].to_list()
         if len(scans) == 0:
             sys.stderr.write('\n\tWARN: No scans in tsv for file {}\n'.format(fname))
             continue
