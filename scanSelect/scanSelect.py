@@ -101,8 +101,6 @@ def main():
     parser.add_argument('mzML_files', nargs='+', help='mzML file(s) to extract scans from.')
 
     args = parser.parse_args()
-    show_bar = not (args.verbose and args.nThread == 1)
-    _nThread = min(args.nThread, len(args.mzML_files))
 
     # read dat
     dat = pd.read_csv(args.tsv_file, sep='\t')
