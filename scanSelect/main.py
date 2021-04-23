@@ -28,7 +28,8 @@ def getScanMap(scans):
     return scan_index, precursor_map
 
 
-def process_file(fname, scans, inplace=False, sufix='_short', verbose=False):
+def process_file(fname, scans, inplace=False, output_dir=None,
+                 sufix='_short', verbose=False):
     '''
     
     Parameters
@@ -37,6 +38,9 @@ def process_file(fname, scans, inplace=False, sufix='_short', verbose=False):
         Path to mzML file.
     scans: list
         List of scans to select from mzML file.
+    output_dir: str
+        Path to ouput directory.
+        This argument takes precedence over arguments for 'inplace' and 'sufix'.
     inplace: bool
         Should input file be overwritten?
     sufix: str
@@ -74,7 +78,10 @@ def process_file(fname, scans, inplace=False, sufix='_short', verbose=False):
 
     # write subset mzML file
     ofname = str()
-    if inplace:
+    if output_dir:
+        ofname = '{}{}.mzML'.format(os.path.splitext(fname)[0], sufix)
+        ofname = '{}/{}'.format(output_dir, ofname)
+    elif inplace:
         ofname = fname
     else:
         ofname = '{}{}.mzML'.format(os.path.splitext(fname)[0], sufix)
@@ -91,8 +98,12 @@ def main():
 
     parser.add_argument('--scanCol', default='scanNum',
                         help='Column in tsv_file to get ms2 scan numbers from. Default is "scanNum".')
-    parser.add_argument('-s', '--sufix', default='_short',
+    parser.add_argument('--fileCol', default='precursorFile',
+                        help='Column in tsv_file to get mzML file names from. Default is "precursorFile".')
+    parser.add_argument('-s', '--sufix', default=None,
                         help='Sufix to add to shortened files. Default is "_short".')
+    parser.add_argument('-d', '--outputDir', default=None,
+                        help='Destination directory for output file(s)')
     parser.add_argument('--inplace', action='store_true', default=False,
                         help='Overwrite mzML files.')
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
@@ -107,13 +118,24 @@ def main():
     scansDict = dict()
     for fname in args.mzML_files:
         # set dict entry to the list of scans for the current fname
-        scansDict[fname] = dat[dat['precursorFile'].apply(lambda x: bool(re.match('{}\.\w+$'.format(os.path.splitext(fname)[0]), x)))][args.scanCol].to_list()
+        scansDict[fname] = dat[dat[args.fileCol].apply(lambda x: bool(re.match('{}\.\w+$'.format(os.path.splitext(fname)[0]), x)))][args.scanCol].to_list()
+    
+    # make mzML output directory if applicable
+    if args.outputDir:
+        if not os.path.isdir(args.outputDir):
+            if args.verbose:
+                sys.stdout.write('Creating directory: {}'.format(args.outputDir))
+            os.mkdir(args.outputDir)
+        _sufix = '' if args.sufix is None else args.sufix
+    else:
+        _sufix = '_short' if args.sufix is None else args.sufix
 
     for fname, scans in scansDict.items():
         # get a list of scans in current mzML file
         if args.verbose:
             sys.stdout.write('Working on {}...\n'.format(fname))
-        process_file(fname, scans, inplace=args.inplace, sufix=args.sufix, verbose=args.verbose)
+        process_file(fname, scans, output_dir = args.outputDir,
+                     inplace=args.inplace, sufix=_sufix, verbose=args.verbose)
 
 if __name__ == '__main__':
     main()
