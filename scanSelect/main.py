@@ -75,6 +75,7 @@ def process_file(fname, scans, inplace=False, output_dir=None,
     newExp = pyopenms.MSExperiment()
     newExp.setSpectra(spectra_subset)
     newExp.sortSpectra(True)
+    newExp.updateRanges()
 
     # write subset mzML file
     ofname = str()
