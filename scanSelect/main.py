@@ -7,7 +7,6 @@ import pandas as pd
 import re
 
 from .fileTypes import FileType
-from .MS2File import MS2File
 
 SCAN_RE = re.compile(r'scan=([0-9]+)')
 
@@ -49,7 +48,8 @@ def getScanMap(scans):
     return scan_index, precursor_map
 
 
-def process_file(fname, scans, levels=[1, 2], inplace=False, output_dir=None,
+def process_file(fname, scans, levels=[1, 2], precursor=True,
+                 output_dir=None, inplace=False,
                  inputType=None, outputType=None,
                  sufix='_short', verbose=False):
     '''
@@ -82,15 +82,15 @@ def process_file(fname, scans, levels=[1, 2], inplace=False, output_dir=None,
 
     # get file types if necissary
     if inputType is None:
-        _inputType = FileType(os.path.splitext(fname)[1])
+        _inputType = FileType(os.path.splitext(fname)[1][1:])
     else:
         _inputType = inputType
-    _outputType = _inputType if outputType is None else _outputType
     
     # load mzML file and get spectra and scan maps
     exp = pyopenms.MSExperiment()
-    msFile = _getFileHandeler()
-    _inputType.load(fname, exp)
+    msFile = _getFileHandeler(_inputType)
+    outputWriter = msFile if outputType is None else _getFileHandeler(_outputType)
+    msFile.load(fname, exp)
     if not exp.isSorted():
         exp.sortSpectra(True)
     spectra = exp.getSpectra()
@@ -124,7 +124,7 @@ def process_file(fname, scans, levels=[1, 2], inplace=False, output_dir=None,
         ofname = '{}{}.mzML'.format(os.path.splitext(fname)[0], sufix)
     if verbose:
         sys.stdout.write('\tWriting {}...\n'.format(ofname))
-    _outputType.store(ofname, newExp)
+    outputWriter.store(ofname, newExp)
 
     if verbose:
         sys.stdout.write('\tDone!\n')
@@ -146,7 +146,7 @@ def main():
                         help='Destination directory for output file(s)')
     parser.add_argument('--inplace', action='store_true', default=False,
                         help='Overwrite mzML files.')
-    parser.add_argument('--precursor', choices=[0, 1], default = 1,
+    parser.add_argument('--precursor', choices=[0, 1], default = 1, type=int,
                         help='Also atempt to get precursor scans?')
 
     parser.add_argument('-i', '--inType', choices=fileTypeList, default=None,
@@ -183,7 +183,7 @@ def main():
         if args.verbose:
             sys.stdout.write('Working on {}...\n'.format(fname))
         process_file(fname, scans, precursor=bool(args.precursor), output_dir=args.outputDir,
-                     inputType=args.inputType, outputType=args.outputType,
+                     inputType=args.inType, outputType=args.outType,
                      inplace=args.inplace, sufix=_sufix, verbose=args.verbose)
 
 if __name__ == '__main__':
