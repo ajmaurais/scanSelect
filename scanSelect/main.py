@@ -6,7 +6,23 @@ import os
 import pandas as pd
 import re
 
-SCAN_RE = re.compile('scan=([0-9]+)')
+from .fileTypes import FileType
+from .MS2File import MS2File
+
+SCAN_RE = re.compile(r'scan=([0-9]+)')
+
+def _getFileHandeler(iftype: FileType):
+    if iftype == FileType.MZML:
+        return pyopenms.MzMLFile()
+    elif iftype == FileType.MZXML:
+        return pyopenms.MzXMLFile()
+    elif iftype == FileType.MS2:
+        return MS2File()
+    elif iftype == FileType.MGF:
+        return MascotGenericFile()
+    else:
+        raise NotImplementedError('{} not implemented!'.format(iftype.value))
+
 
 def getScanMap(scans):
     scan_index = dict()
@@ -15,7 +31,12 @@ def getScanMap(scans):
     current_precursor = 0
     for i, scan in enumerate(scans):
         current_level = scan.getMSLevel()
-        match = SCAN_RE.search(scan.getNativeID().decode('utf-8'))
+        scanStr = scan.getNativeID()
+        try:
+            scanStr = scanStr.decode('utf-8')
+        except (UnicodeDecodeError, AttributeError):
+            pass
+        match = SCAN_RE.search(scanStr)
         if match:
             scan_num = int(match.group(1))
             if current_level == 1:
@@ -28,19 +49,25 @@ def getScanMap(scans):
     return scan_index, precursor_map
 
 
-def process_file(fname, scans, inplace=False, output_dir=None,
+def process_file(fname, scans, levels=[1, 2], inplace=False, output_dir=None,
+                 inputType=None, outputType=None,
                  sufix='_short', verbose=False):
     '''
-    
     Parameters
     ----------
     fname: str
         Path to mzML file.
     scans: list
         List of scans to select from mzML file.
+    precursor: bool
+        Also try to get the precursor for each scan?
     output_dir: str
         Path to ouput directory.
         This argument takes precedence over arguments for 'inplace' and 'sufix'.
+    inputType: FileType
+        Input file type.
+    outputType: FileType
+        Output file type.
     inplace: bool
         Should input file be overwritten?
     sufix: str
@@ -52,10 +79,18 @@ def process_file(fname, scans, inplace=False, output_dir=None,
     if len(scans) == 0:
         sys.stderr.write('\n\tWARN: No scans in tsv for file {}\n'.format(fname))
         return
+
+    # get file types if necissary
+    if inputType is None:
+        _inputType = FileType(os.path.splitext(fname)[1])
+    else:
+        _inputType = inputType
+    _outputType = _inputType if outputType is None else _outputType
     
     # load mzML file and get spectra and scan maps
     exp = pyopenms.MSExperiment()
-    pyopenms.MzMLFile().load(fname, exp)
+    msFile = _getFileHandeler()
+    _inputType.load(fname, exp)
     if not exp.isSorted():
         exp.sortSpectra(True)
     spectra = exp.getSpectra()
@@ -65,13 +100,14 @@ def process_file(fname, scans, inplace=False, output_dir=None,
     scans_index = list() # list of index of scans to select
     for scan in scans:
         # add precursor
-        scans_index.append(scan_index[precursor_map[int(scan)]])
+        if precursor:
+            scans_index.append(scan_index[precursor_map[int(scan)]])
 
         # add ms2s
         scans_index.append(scan_index[int(scan)])
 
     # subset scan list
-    spectra_subset = [spectra[i] for i in scans_index]
+    spectra_subset = [spectra[i] for i in set(scans_index)]
     newExp = pyopenms.MSExperiment()
     newExp.setSpectra(spectra_subset)
     newExp.sortSpectra(True)
@@ -88,25 +124,36 @@ def process_file(fname, scans, inplace=False, output_dir=None,
         ofname = '{}{}.mzML'.format(os.path.splitext(fname)[0], sufix)
     if verbose:
         sys.stdout.write('\tWriting {}...\n'.format(ofname))
-    pyopenms.MzMLFile().store(ofname, newExp)
+    _outputType.store(ofname, newExp)
 
     if verbose:
         sys.stdout.write('\tDone!\n')
 
 
 def main():
+    fileTypeList = [val.value for val in FileType.__members__.values()]
+
     parser = argparse.ArgumentParser(description='Select scans and precursors in "scanNum" column from mzML file.')
 
     parser.add_argument('--scanCol', default='scanNum',
                         help='Column in tsv_file to get ms2 scan numbers from. Default is "scanNum".')
     parser.add_argument('--fileCol', default='precursorFile',
                         help='Column in tsv_file to get mzML file names from. Default is "precursorFile".')
+
     parser.add_argument('-s', '--sufix', default=None,
                         help='Sufix to add to shortened files. Default is "_short".')
     parser.add_argument('-d', '--outputDir', default=None,
                         help='Destination directory for output file(s)')
     parser.add_argument('--inplace', action='store_true', default=False,
                         help='Overwrite mzML files.')
+    parser.add_argument('--precursor', choices=[0, 1], default = 1,
+                        help='Also atempt to get precursor scans?')
+
+    parser.add_argument('-i', '--inType', choices=fileTypeList, default=None,
+                        help='Input file type.')
+    parser.add_argument('-o', '--outType', choices=fileTypeList, default=None,
+                        help='Output file type')
+
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
                         help='Print verbose output.')
     parser.add_argument('tsv_file', help='Path to tsv file with "scanNum" column.')
@@ -135,7 +182,8 @@ def main():
         # get a list of scans in current mzML file
         if args.verbose:
             sys.stdout.write('Working on {}...\n'.format(fname))
-        process_file(fname, scans, output_dir = args.outputDir,
+        process_file(fname, scans, precursor=bool(args.precursor), output_dir=args.outputDir,
+                     inputType=args.inputType, outputType=args.outputType,
                      inplace=args.inplace, sufix=_sufix, verbose=args.verbose)
 
 if __name__ == '__main__':
