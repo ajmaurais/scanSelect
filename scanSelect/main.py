@@ -7,6 +7,7 @@ import pandas as pd
 import re
 
 from .fileTypes import FileType
+from .MS2File import MS2File
 
 SCAN_RE = re.compile(r'scan=([0-9]+)')
 
@@ -84,12 +85,16 @@ def process_file(fname, scans, levels=[1, 2], precursor=True,
     if inputType is None:
         _inputType = FileType(os.path.splitext(fname)[1][1:])
     else:
-        _inputType = inputType
+        _inputType = FileType(inputType)
+    if outputType is None:
+        _outputType = FileType(os.path.splitext(fname)[1][1:])
+    else:
+        _outputType = FileType(outputType)
     
     # load mzML file and get spectra and scan maps
     exp = pyopenms.MSExperiment()
     msFile = _getFileHandeler(_inputType)
-    outputWriter = msFile if outputType is None else _getFileHandeler(_outputType)
+    outputWriter = msFile if _outputType is None else _getFileHandeler(_outputType)
     msFile.load(fname, exp)
     if not exp.isSorted():
         exp.sortSpectra(True)
@@ -116,12 +121,12 @@ def process_file(fname, scans, levels=[1, 2], precursor=True,
     # write subset mzML file
     ofname = str()
     if output_dir:
-        ofname = '{}{}.mzML'.format(os.path.splitext(fname)[0], sufix)
+        ofname = '{}{}.{}'.format(os.path.splitext(fname)[0], sufix, _outputType.value)
         ofname = '{}/{}'.format(output_dir, ofname)
     elif inplace:
-        ofname = fname
+        ofname = '{}.{}'.format(os.path.splitext(fname)[0], _outputType.value)
     else:
-        ofname = '{}{}.mzML'.format(os.path.splitext(fname)[0], sufix)
+        ofname = '{}{}.{}'.format(os.path.splitext(fname)[0], sufix, _outputType.value)
     if verbose:
         sys.stdout.write('\tWriting {}...\n'.format(ofname))
     outputWriter.store(ofname, newExp)
